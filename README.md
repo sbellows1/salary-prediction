@@ -21,3 +21,5 @@ clean_helperfunctions.py is a module of helper functions for data cleaning.
 logincreds.py is a way to store SQL credentials. Must be updated with your credentials and stored in the same folder as First Portfolio Project.ipynb and salary-prediction-pipeline-full.py. I have done this for convenience, if in a professional environment I would use a secure way of sending credentials such as hashicorp vault.
 
 requirements.txt - list of dependencies and versions.
+
+data folder contains the data used in the analysis.
