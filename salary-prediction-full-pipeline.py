@@ -1,11 +1,6 @@
-##This is an end to end script that loads and cleans the data,
-##builds 5 models and compares them, and then chooses the best model
-##to make predictions and save to a PostgreSQL database.
-
-__author__ = 'Sam Bellows'
-__email__ = 'sbellows1@gmail.com'
-__website__ = 'www.github.com/sbellows1'
-
+# This is an end to end script that loads and cleans the data,
+# builds 5 models and compares them, and then chooses the best model
+# to make predictions and save to a PostgreSQL database.
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -19,25 +14,30 @@ from sklearn.neighbors import KNeighborsRegressor
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import make_scorer
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-import psycopg2
 from sqlalchemy import create_engine
-from logincreds import grab_creds
+from logincreds import db_user, db_password, db_server, db_name
+
 
 def load_data(filepath):
     '''loads a csv from the given filepath'''
     return pd.read_csv(filepath)
 
-def merge_dfs_delete_originals(df1, df2, key = None, left_index = False, right_index = False):
+
+def merge_dfs_delete_originals(df1, df2, key=None, left_index=False,
+                               right_index=False):
     '''Merges the two input dataframes and then deletes them. Merges on the
     given key. left_index and right_index show which index to keep if any.'''
-    merge_df = df1.merge(df2, on = key, left_index = left_index, right_index = right_index)
+    merge_df = df1.merge(df2, on=key, left_index=left_index,
+                         right_index=right_index)
     del df1
     del df2
     return merge_df
 
+
 def RMSE(actual, predictions):
     '''Calculates RMSE for the given values and predictions'''
     return np.sqrt(((actual - predictions)**2).mean())
+
 
 def split_features_target(df, target):
     '''Takes a dataframe and a target column, returns a dataframe of features
@@ -45,13 +45,15 @@ def split_features_target(df, target):
     target_series = df.pop(target)
     return df, target_series
 
+
 def one_hot_encode(df, cat_cols):
     '''Takes a dataframe and a list of categorical columns. Drops the
     categorical columns and replaces them with one hot encoded versions of
     said columns'''
-    df = pd.concat([df, pd.get_dummies(df[cat_cols])], axis = 1)
-    df.drop(cat_cols, axis = 1, inplace = True)
+    df = pd.concat([df, pd.get_dummies(df[cat_cols])], axis=1)
+    df.drop(cat_cols, axis=1, inplace=True)
     return df
+
 
 def make_baseline(df, feature, target):
     '''Takes a dataframe, single feature, and target feature and returns a
@@ -61,13 +63,17 @@ def make_baseline(df, feature, target):
     preds = lm.predict(np.array(df[feature]).reshape(-1, 1))
     return RMSE(target, preds)
 
-def train_model(model, features, targets, rmse_dict, cv=5, n_jobs = -1, scorer = None):
+
+def train_model(model, features, targets, rmse_dict, cv=5, n_jobs=-1,
+                scorer=None):
     '''Takes a model, feature and target dataframes, dictionaries to record
     mean and standard deviation of RMSE, the number of folds, and the
     scorer. Trains the model with cross_validation, then records the mean and
     standard deviation for the RMSE'''
-    cv_score = cross_val_score(model, features, targets, cv = cv, n_jobs = n_jobs, scoring = scorer)
+    cv_score = cross_val_score(model, features, targets, cv=cv, n_jobs=n_jobs,
+                               scoring=scorer)
     rmse_dict[model] = -1.0*cv_score.mean()
+
 
 def create_feature_importance_df(model, features):
     '''Takes a model and returns a dataframe displaying the feature importances
@@ -81,10 +87,11 @@ def create_feature_importance_df(model, features):
     feature_importances = np.array(feature_importances)
     feature_importances = pd.DataFrame({'features': features.columns,
                                         'importances': feature_importances})
-    feature_importances.set_index('features', inplace = True)
-    feature_importances.sort_values('importances', ascending = False,
-                                    inplace = True)
+    feature_importances.set_index('features', inplace=True)
+    feature_importances.sort_values('importances', ascending=False,
+                                    inplace=True)
     return feature_importances
+
 
 def make_predictions(model, test_data):
     '''Takes a model, test data, and a cleaner of class ImputeEncode and
@@ -93,6 +100,7 @@ def make_predictions(model, test_data):
     predictions = pd.Series(predictions)
     return predictions
 
+
 def display_results(model, predictions, feature_importances):
     '''Displays the final model, the first few predictions, and the feature
     importances given by said model'''
@@ -100,33 +108,39 @@ def display_results(model, predictions, feature_importances):
     print(predictions.head(10))
     print(feature_importances)
 
+
 def save_results(model, predictions, feature_importances, rmse_df):
     '''Saves the model into a txt file and the predictions and feature
     importances into a postgreSQL database. Also saves a plot of the
     feature importances and RMSE values.'''
-    with open ('final_model.txt', 'w') as f:
+    with open('final_model.txt', 'w') as f:
         f.write(str(model))
-    db_user, db_password, db_server, db_name = grab_creds()
-    conn_string = 'postgresql://'+db_user+':'+db_password+'@'+db_server+':5432/'+db_name
+    conn_string = 'postgresql://{}:{}@{}:5432/{}'.format(db_user, db_password,
+                                                         db_server, db_name)
     engine = create_engine(conn_string)
-    predictions.to_sql('predictions', engine, if_exists = 'replace')
-    feature_importances.to_sql('feature_importances', engine, if_exists = 'replace', method = 'multi')
-    rmse_df.to_sql('rmse', engine, if_exists = 'replace', method = 'multi')
+    predictions.to_sql('predictions', engine, if_exists='replace')
+    feature_importances.to_sql('feature_importances', engine,
+                               if_exists='replace', method='multi')
+    rmse_df.to_sql('rmse', engine, if_exists='replace', method='multi')
     plot = rmse_df.plot.bar()
     fig = plot.get_figure()
-    fig.savefig('model_RMSE.png')
+    fig.savefig('model_RMSE.png', bbox_inches='tight')
     plot = feature_importances.iloc[0:20].plot.bar()
     fig = plot.get_figure()
-    fig.savefig('feature_importances.png')
+    fig.savefig('feature_importances.png', bbox_inches='tight')
+
 
 class Normalizer(BaseEstimator, TransformerMixin):
     '''Normalizes columns in a feature dataframe'''
     def __init__(self):
         pass
-    def fit(self, X, y = None):
+
+    def fit(self, X, y=None):
         return self
-    def transform(self, X, y = None):
+
+    def transform(self, X, y=None):
         return X.apply(lambda x: (x - min(x))/(max(x) - min(x)))
+
 
 class ImputeEncode(BaseEstimator, TransformerMixin):
     '''Goes through all the cleaning processes for this particular analysis'''
@@ -136,8 +150,10 @@ class ImputeEncode(BaseEstimator, TransformerMixin):
         self.cat_cols = cat_cols
         self.outlier_low = outlier_low
         self.outlier_high = outlier_high
-    def fit(self, X, y= None):
+
+    def fit(self, X, y=None):
         return self
+
     def transform(self, X, y=None):
         X = set_numeric(X, self.numeric_cols)
         X = set_categorical(X, self.cat_cols)
@@ -146,41 +162,42 @@ class ImputeEncode(BaseEstimator, TransformerMixin):
         X = one_hot_encode(X, self.cat_cols)
         return X
 
+
 if __name__ == '__main__':
 
-    ##Load the data
+    # Load the data
     train_features = load_data('data/train_features.csv')
     test_features = load_data('data/test_features.csv')
     train_target = load_data('data/train_salaries.csv')
 
-    ##ID the columns
+    # ID the columns
     drop_col_names = ['jobId', 'companyId']
     outlier_col = 'salary'
     numeric_cols = ['yearsExperience', 'milesFromMetropolis']
     cat_cols = ['jobType', 'degree', 'major', 'industry']
 
-    ##Merge Train and train_target
+    # Merge Train and train_target
     train_full = merge_dfs_delete_originals(train_features, train_target)
 
-    ##Clean train data
-    train_full_clean = remove_outliers(train_full, outlier_col, low = 0)
+    # Clean train data
+    train_full_clean = remove_outliers(train_full, outlier_col, low=0)
     train_full_clean = drop_cols(train_full, drop_col_names)
 
-    ##Split out target into its own series
+    # Split out target into its own series
     features, target = split_features_target(train_full_clean, 'salary')
 
-    #Make baseline
+    # Make baseline
     baseline_RMSE = make_baseline(features, 'yearsExperience', target)
 
-    ##Create scoring object
-    RMSE_scorer = make_scorer(RMSE, greater_is_better = False)
+    # Create scoring object
+    RMSE_scorer = make_scorer(RMSE, greater_is_better=False)
 
-    ##Initialize ImputeEncode instance to transform training data
+    # Initialize ImputeEncode instance to transform training data
     cleaner = ImputeEncode(numeric_cols, cat_cols)
     features_transform = cleaner.transform(features)
 
-    ##Initialize models
-    ##Hyperparameters previously tuned with a gridsearch
+    # Initialize models
+    # Hyperparameters previously tuned with a gridsearch
     enet = ElasticNet()
 
     pca_enet_pipe = Pipeline([('scale', StandardScaler()),
@@ -188,45 +205,47 @@ if __name__ == '__main__':
                               ('en', ElasticNet())])
 
     knn_pipe = Pipeline([('norm', Normalizer()),
-                       ('knn', KNeighborsRegressor(n_neighbors = 25,
-                                                   weights = 'uniform'))])
+                         ('knn', KNeighborsRegressor(n_neighbors=25,
+                                                     weights='uniform'))])
 
-    rf = RandomForestRegressor(n_estimators = 150, max_depth = 10,
-                               max_features = 0.5)
-    gb = GradientBoostingRegressor(n_estimators = 150, learning_rate = 0.1,
-                                   max_depth = 5, max_features = 0.75)
+    rf = RandomForestRegressor(n_estimators=150, max_depth=10,
+                               max_features=0.5)
+    gb = GradientBoostingRegressor(n_estimators=150, learning_rate=0.1,
+                                   max_depth=5, max_features=0.75)
 
-    model_list = []
     RMSE_dict = {}
 
-    model_list.extend([enet, pca_enet_pipe, knn_pipe, rf, gb])
+    model_list = [enet, pca_enet_pipe, knn_pipe, rf, gb]
     model_list.extend([gb])
-    ##Train models
+    # Train models
     for model in model_list:
         train_model(model, features_transform, target, RMSE_dict,
-                    n_jobs = 4, scorer = RMSE_scorer)
-    ##Pick model with lowest RMSE
-    final_model = min(RMSE_dict, key = RMSE_dict.get)
+                    n_jobs=4, scorer=RMSE_scorer)
+    # Pick model with lowest RMSE
+    final_model = min(RMSE_dict, key=RMSE_dict.get)
     print(RMSE_dict)
-    ##Refit model on entire training set
+    # Refit model on entire training set
     final_model.fit(features_transform, target)
 
-    ##prepare test set
+    # prepare test set
     test_features = drop_cols(test_features, drop_col_names)
     test_transform = cleaner.transform(test_features)
 
-    #Make predictions and generate feature importances
+    # Make predictions and generate feature importances
     predictions = make_predictions(final_model, test_transform)
     predictions = pd.Series(np.array(predictions))
-    feature_importances = create_feature_importance_df(final_model, features_transform)
+    feature_importances = create_feature_importance_df(final_model,
+                                                       features_transform)
 
-    #Create dictionary pairing models with RMSE
+    # Create dictionary pairing models with RMSE
     models = ['baseline', 'linear', 'linear with PCA', 'random forest',
               'gradient boosting', 'knn']
     RMSE_vals = [baseline_RMSE, RMSE_dict[enet], RMSE_dict[pca_enet_pipe],
                  RMSE_dict[rf], RMSE_dict[gb], RMSE_dict[knn_pipe]]
-    RMSE_df = pd.DataFrame({'model':models, 'RMSE':RMSE_vals}).set_index('model').sort_values('RMSE', ascending = False)
+    RMSE_df = pd.DataFrame(
+              {'model': models, 'RMSE': RMSE_vals}).set_index(
+              'model').sort_values('RMSE', ascending=False)
 
-    #Display and save results
+    # Display and save results
     display_results(final_model, predictions, feature_importances)
     save_results(final_model, predictions, feature_importances, RMSE_df)
